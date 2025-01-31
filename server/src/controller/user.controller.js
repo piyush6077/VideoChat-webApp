@@ -1,6 +1,8 @@
 // import { isValidObjectId } from "mongoose";
 import { User } from "../models/user.models.js";
 import bcrypt from "bcryptjs"
+import { generateAccessTokenRefreshToken } from "../utils/generateRefreshAccessToken.js";
+import jwt from "jsonwebtoken"
 
 export const handleSignUp = async (req,res) => {
 
@@ -39,12 +41,7 @@ export const handleLogin = async (req,res) => {
             return res.status(400).json("Password is Invalid")
         }
         
-        //Generate RefreshToken and AccessToken
-        const refreshToken = loggedInUser.generateRefreshToken()
-        const accessToken = loggedInUser.generateAccessToken()
-    
-        loggedInUser.refreshToken = refreshToken
-        await loggedInUser.save({validateBeforeSave:true})
+        const {accessToken , refreshToken} = await generateAccessTokenRefreshToken(loggedInUser._id)
 
         const createdLoggedInUser = await User.findById(loggedInUser._id).select("-password -refreshToken")        
         
@@ -129,4 +126,47 @@ export const getCurrentUser = async (req,res) => {
     return res
     .status(400)
     .json({user: req.user , message:"User fetched Successfully"})
+}
+
+export const getRefreshToken = async (req,res) => {
+    const incomingRefreshToken = req.cookies?.refreshToken || req.body.refreshToken 
+    if(!incomingRefreshToken) return res.status(400).json("No Refresh token ")
+console.log(incomingRefreshToken)
+    
+    try {
+        const decodedToken = jwt.verify(
+            incomingRefreshToken ,
+            process.env.REFRESH_TOKEN_SECRET
+        )
+        
+        const user = await User.findById(
+            decodedToken._id
+        )
+        
+        if(!user){
+            return res.status(400).json("invalid Refresh Token - Unauthorized")
+        }
+        
+        if(incomingRefreshToken !== user?.refreshToken){
+            return res.status(400).json("Invalid Refresh Token")
+        }
+    
+        const {accessToken , refreshToken} = await generateAccessTokenRefreshToken(user._id)
+    
+        user.refreshToken = refreshToken
+        await user.save({validateBeforeSave:true})
+       
+        const options = {
+            httpOnly: true,
+            secure: process.env.NODEENV !== "development" 
+        }
+
+        return res
+        .status(200)
+        .cookie("accessToken" , accessToken ,options)
+        .cookie("refreshToken", refreshToken ,options)
+        .json({message:"New Access Token Created" , accessToken:accessToken , refreshToken:refreshToken})
+    } catch (error) {
+        console.log(error)
+    }
 }

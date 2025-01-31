@@ -27,7 +27,6 @@ const userSchema = new mongoose.Schema(
 
 
 userSchema.pre("save", async function(next){
-    console.log("is this pre hook works")
     if(!this.isModified("password")) return next() ;
 
     this.password = await bcrypt.hash(this.password, 10)
@@ -36,8 +35,6 @@ userSchema.pre("save", async function(next){
 
 // if error come here 
 userSchema.methods.isPasswordCorrect = async function(password){
-    console.log("user",password)
-    console.log("db",  this.password)
     return await bcrypt.compare(password , this.password)
 
 }
